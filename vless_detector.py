@@ -718,10 +718,13 @@ def process_packet(app, pkt, exclude_lan):
 def _get_windows_adapter_map():
     if sys.platform != "win32": return {}
     try:
+        kwargs = dict(timeout=10, stderr=subprocess.DEVNULL)
+        # Prevent console window popup and hang in --windowed PyInstaller builds
+        kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
         out = subprocess.check_output(
             ["powershell", "-NoProfile", "-Command",
              "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-NetAdapter | Select-Object Name, Status, InterfaceGuid | ConvertTo-Json"],
-            timeout=10, stderr=subprocess.DEVNULL
+            **kwargs
         ).decode("utf-8", errors="replace")
     except Exception: return {}
 
@@ -765,7 +768,8 @@ class AppUI:
         self.iface_cb = ttk.Combobox(ctrl, values=self._iface_values, width=35)
         if self.iface_cb['values']: self.iface_cb.current(0)
         self.iface_cb.grid(row=0, column=1, sticky=tk.W, padx=5)
-        ttk.Button(ctrl, text="↻", width=3, command=self._refresh_interfaces).grid(row=0, column=2, padx=2)
+        self.btn_refresh = ttk.Button(ctrl, text="↻", width=3, command=self._refresh_interfaces)
+        self.btn_refresh.grid(row=0, column=2, padx=2)
 
         ttk.Label(ctrl, text="Probes:").grid(row=1, column=0, sticky=tk.W)
         self.probe_label = ttk.Label(ctrl, text="0 loaded")
@@ -824,31 +828,44 @@ class AppUI:
             if os.path.exists(fn): self.load_probe_file(fn)
 
     def _refresh_interfaces(self):
-        scapy_ifaces = get_if_list()
-        win_map = _get_windows_adapter_map()
-        self._display_map = {}
-        display = []
+        """Refresh interface list in a background thread to avoid blocking the UI."""
+        self.btn_refresh.config(state="disabled")
 
-        for si in scapy_ifaces:
-            guid = ""
-            if "NPF_{" in si:
-                gs = si.index("NPF_{") + 4
-                ge = si.index("}", gs) if "}" in si[gs:] else len(si)
-                guid = si[gs:ge].lower()
-            win_name, status = win_map.get(guid, ("", ""))
-            if win_name:
-                short_guid = guid[:8] + "..." if len(guid) > 8 else guid
-                display_str = f"[{status}] {win_name}  (GUID:{short_guid})"
-            else:
-                display_str = si
-            display.append(display_str)
-            self._display_map[display_str] = si
+        def _worker():
+            scapy_ifaces = get_if_list()
+            win_map = _get_windows_adapter_map()
+            display_map = {}
+            display = []
 
+            for si in scapy_ifaces:
+                guid = ""
+                if "NPF_{" in si:
+                    gs = si.index("NPF_{") + 4
+                    ge = si.index("}", gs) if "}" in si[gs:] else len(si)
+                    guid = si[gs:ge].lower()
+                win_name, status = win_map.get(guid, ("", ""))
+                if win_name:
+                    short_guid = guid[:8] + "..." if len(guid) > 8 else guid
+                    display_str = f"[{status}] {win_name}  (GUID:{short_guid})"
+                else:
+                    display_str = si
+                display.append(display_str)
+                display_map[display_str] = si
+
+            # Update UI on main thread
+            self.root.after(0, lambda: self._apply_interfaces(display, display_map))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _apply_interfaces(self, display, display_map):
+        """Apply interface list to combobox (must be called on main thread)."""
+        self._display_map = display_map
         self._iface_values = display
         self.iface_cb['values'] = display
         if display:
             first = next((d for d in display if "(" in d), display[0])
             self.iface_cb.current(display.index(first))
+        self.btn_refresh.config(state="normal")
 
     def _clear_log(self):
         self._all_logs.clear()

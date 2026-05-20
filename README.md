@@ -104,6 +104,25 @@ python vless_detector.py
 4. Toggle "Exclude LAN IPs" as needed
 5. Click **"Start Capture"** to begin sniffing
 
+### Troubleshooting: Finding Your Network Interface
+
+The GUI maps Npcap interface GUIDs to friendly Windows adapter names. If you need to manually identify which interface to use, run this in PowerShell:
+
+```powershell
+Get-NetAdapter | Select-Object Name, InterfaceGuid
+```
+
+Example output:
+
+```
+Name          InterfaceGuid
+----          -------------
+Ethernet      {B1234567-ABCD-1234-EF56-789012345678}
+Wi-Fi         {C9876543-DCBA-4321-FE65-098765432109}
+```
+
+The GUI dropdown shows interfaces in the format `[Status] Name (GUID:xxxxxxxx...)`. Match the GUID prefix to identify the correct adapter.
+
 ## Run as Packaged EXE
 
 Download the pre-built `.exe` from the [Releases](../../releases) page. All dependencies are bundled — just ensure **Npcap** is installed and `geoip.dat` is in the same directory as the executable.

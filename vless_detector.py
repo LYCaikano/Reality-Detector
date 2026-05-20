@@ -68,6 +68,8 @@ class ProbeSet:
     def __init__(self, name, probes):
         self.name = name
         self.probes = probes
+        import hashlib
+        self.content_hash = hashlib.sha256(b''.join(probes)).hexdigest()
 
 def _read_be16(data, off): return struct.unpack_from('>H', data, off)[0]
 def _read_be24(data, off): return struct.unpack_from('>L', b'\x00' + data[off:off+3])[0]
@@ -967,6 +969,10 @@ class AppUI:
                     if h: probes.append(binascii.unhexlify(h))
             if probes:
                 ps = ProbeSet(os.path.basename(path), probes)
+                # Skip if identical probe content already loaded
+                if any(existing.content_hash == ps.content_hash for existing in self.app.probe_sets):
+                    self.log(f"[SYS] Skipped '{ps.name}' (identical probe set already loaded)")
+                    return
                 self.app.probe_sets.append(ps)
                 self.probe_label.config(text=f"{len(self.app.probe_sets)} set(s)")
                 self.log(f"[SYS] Loaded '{ps.name}' ({len(probes)} probes)")

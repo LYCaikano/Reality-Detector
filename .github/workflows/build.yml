@@ -57,11 +57,16 @@ jobs:
             exit 1
           }
 
-      - name: Upload EXE as artifact
+      - name: Stage release files
+        run: |
+          Copy-Item "characteristic_original.txt" "dist/"
+          Copy-Item "characteristic_alert.txt" "dist/"
+
+      - name: Upload release files as artifact
         uses: actions/upload-artifact@v4
         with:
           name: Reality-detector-windows
-          path: dist/Reality-detector.exe
+          path: dist/
           retention-days: 30
 
       - name: Create GitHub Release

@@ -1,31 +1,39 @@
 #!/usr/bin/env python3
 """VLESS/REALITY Detector — one-click launcher.
 
-Runs:
-  1. gen_geo_cache.py  — build CN IP/domain cache (skips if up-to-date)
-  2. vless_detector.py — start GUI
+Runs the detector GUI directly (PyInstaller compatible).
 """
 
 import os
 import sys
-import subprocess
+import traceback
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-
-def step(name, script):
-    path = os.path.join(SCRIPT_DIR, script)
-    if not os.path.exists(path):
-        print(f"[SKIP] {name} — {script} not found")
-        return
-    print(f"[RUN]  {name}")
-    subprocess.run([sys.executable, path], cwd=SCRIPT_DIR, check=True)
-    print(f"[DONE] {name}\n")
+# Set working directory to exe directory for PyInstaller compatibility
+if getattr(sys, 'frozen', False):
+    os.chdir(os.path.dirname(sys.executable))
+else:
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 
 def main():
-    # gen_geo_cache is auto-run by vless_detector.py on import
-    step("Start detector GUI", "vless_detector.py")
+    try:
+        import tkinter as tk
+        from vless_detector import AppUI
+        root = tk.Tk()
+        AppUI(root)
+        root.mainloop()
+    except Exception as e:
+        error_msg = f"Startup error:\n\n{e}\n\n{traceback.format_exc()}"
+        try:
+            import tkinter as tk
+            from tkinter import messagebox
+            err_root = tk.Tk()
+            err_root.withdraw()
+            messagebox.showerror("Reality Detector - Error", error_msg)
+            err_root.destroy()
+        except Exception:
+            print(error_msg, file=sys.stderr)
+            input("Press Enter to exit...")
 
 
 if __name__ == "__main__":

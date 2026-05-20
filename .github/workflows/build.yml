@@ -34,6 +34,20 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Download geoip.dat
+        run: |
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/v2fly/geoip/releases/latest"
+          $asset = $release.assets | Where-Object { $_.name -eq "geoip.dat" }
+          if ($asset) {
+            Write-Host "Downloading geoip.dat from $($asset.browser_download_url)"
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "geoip.dat"
+            $size = (Get-Item "geoip.dat").Length / 1MB
+            Write-Host "Downloaded geoip.dat ($([math]::Round($size, 2)) MB)"
+          } else {
+            Write-Error "geoip.dat not found in latest release"
+            exit 1
+          }
+
       - name: Build EXE with PyInstaller
         run: |
           pyinstaller --onefile --windowed `
@@ -61,6 +75,7 @@ jobs:
         run: |
           Copy-Item "characteristic_original.txt" "dist/"
           Copy-Item "characteristic_alert.txt" "dist/"
+          Copy-Item "geoip.dat" "dist/"
 
       - name: Upload release files as artifact
         uses: actions/upload-artifact@v4
@@ -75,6 +90,7 @@ jobs:
         with:
           files: |
             dist/Reality-detector.exe
+            dist/geoip.dat
             characteristic_original.txt
             characteristic_alert.txt
           body: |
@@ -82,17 +98,16 @@ jobs:
 
             ### Prerequisites
             - **Npcap** must be installed: [https://npcap.com/](https://npcap.com/) (enable "WinPcap API-compatible Mode")
-            - **geoip.dat** must be placed in the same directory as the executable. Download from [v2fly/geoip releases](https://github.com/v2fly/geoip/releases)
 
             ### Usage
-            1. Download all release files (`Reality-detector.exe`, `characteristic_original.txt`, `characteristic_alert.txt`)
-            2. Place them in the same folder along with `geoip.dat`
-            3. Run `Reality-detector.exe` as Administrator
+            1. Download all release files and place them in the same folder
+            2. Run `Reality-detector.exe` as Administrator
 
             ### Included Files
             | File | Description |
             |------|-------------|
             | `Reality-detector.exe` | Main application (all Python dependencies bundled) |
+            | `geoip.dat` | GeoIP database for CN IP filtering (from v2fly/geoip) |
             | `characteristic_original.txt` | CCS/AppData probe payloads |
             | `characteristic_alert.txt` | TLS Alert probe payloads |
           generate_release_notes: true

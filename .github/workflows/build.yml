@@ -72,43 +72,43 @@ jobs:
             exit 1
           }
 
-      - name: Stage release files
+      - name: Stage and package release
         run: |
           Copy-Item "characteristic_original.txt" "dist/"
           Copy-Item "characteristic_alert.txt" "dist/"
           Copy-Item "geoip.dat" "dist/"
+          Compress-Archive -Path "dist/*" -DestinationPath "Reality-detector-windows.zip"
+          $size = (Get-Item "Reality-detector-windows.zip").Length / 1MB
+          Write-Host "Package created: Reality-detector-windows.zip ($([math]::Round($size, 2)) MB)"
 
-      - name: Upload release files as artifact
+      - name: Upload zip as artifact
         uses: actions/upload-artifact@v4
         with:
           name: Reality-detector-windows
-          path: dist/
+          path: Reality-detector-windows.zip
           retention-days: 30
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/Reality-detector.exe
-            dist/geoip.dat
-            characteristic_original.txt
-            characteristic_alert.txt
+          files: Reality-detector-windows.zip
           body: |
             ## VLESS/REALITY Traffic Detector
 
             ### Prerequisites
-            - **Npcap** must be installed: [https://npcap.com/](https://npcap.com/) (enable "WinPcap API-compatible Mode")
+            - **Npcap**: [https://npcap.com/](https://npcap.com/) (install with **"WinPcap API-compatible Mode"** enabled)
 
             ### Usage
-            1. Download all release files and place them in the same folder
-            2. Run `Reality-detector.exe` as Administrator
+            1. Download `Reality-detector-windows.zip`
+            2. Extract to any folder
+            3. Run `Reality-detector.exe` as Administrator
 
-            ### Included Files
+            ### Package Contents
             | File | Description |
             |------|-------------|
             | `Reality-detector.exe` | Main application (all Python dependencies bundled) |
-            | `geoip.dat` | GeoIP database for CN IP filtering (from v2fly/geoip) |
+            | `geoip.dat` | GeoIP database for CN IP filtering (from [v2fly/geoip](https://github.com/v2fly/geoip)) |
             | `characteristic_original.txt` | CCS/AppData probe payloads |
             | `characteristic_alert.txt` | TLS Alert probe payloads |
           generate_release_notes: true

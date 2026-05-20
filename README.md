@@ -110,12 +110,12 @@ Download the pre-built `.exe` from the [Releases](../../releases) page. All depe
 
 ```bash
 # Place these files together:
-#   vless-detector.exe
+#   Reality-detector.exe
 #   geoip.dat
 #   characteristic_original.txt
 #   characteristic_alert.txt
 
-vless-detector.exe
+Reality-detector.exe
 ```
 
 ## Configuration Files

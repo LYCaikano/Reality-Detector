@@ -25,14 +25,19 @@ from scapy.all import sniff, get_if_list, IP, IPv6, TCP
 
 from geo_matcher import get_geo
 # Auto-generate geo cache on first run
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-_cache_script = os.path.join(_SCRIPT_DIR, "gen_geo_cache.py")
+if getattr(sys, 'frozen', False):
+    _SCRIPT_DIR = os.path.dirname(sys.executable)
+else:
+    _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _cache_ip = os.path.join(_SCRIPT_DIR, ".cn_ip_cache.bin")
-if os.path.exists(_cache_script) and not os.path.exists(_cache_ip):
+_geoip_dat = os.path.join(_SCRIPT_DIR, "geoip.dat")
+if not os.path.exists(_cache_ip) and os.path.exists(_geoip_dat):
     print("[geo] Building IP cache...", flush=True)
-    r = subprocess.run([sys.executable, _cache_script], cwd=_SCRIPT_DIR)
-    if r.returncode != 0:
-        print(f"[geo] FAILED (exit {r.returncode}) — geo bypass disabled!", flush=True)
+    try:
+        from gen_geo_cache import main as _gen_cache
+        _gen_cache()
+    except Exception as e:
+        print(f"[geo] FAILED ({e}) — geo bypass disabled!", flush=True)
     print("[geo] Done.", flush=True)
 _geo = get_geo()
 if len(_geo._v4) == 0 and len(_geo._v6) == 0:

@@ -5,10 +5,14 @@ After that, this module loads it instantly.
 """
 
 import os
+import sys
 import struct
 import ipaddress
 
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, 'frozen', False):
+    _SCRIPT_DIR = os.path.dirname(sys.executable)
+else:
+    _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def _load_ip_cache():

@@ -53,6 +53,7 @@ jobs:
           pyinstaller --onefile --windowed `
             --name Reality-detector `
             --collect-all scapy `
+            --hidden-import gen_geo_cache `
             --hidden-import _tkinter `
             --hidden-import tkinter `
             --hidden-import tkinter.ttk `

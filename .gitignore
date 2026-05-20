@@ -1,0 +1,61 @@
+# ============================================================
+# .gitignore — VLESS/REALITY Traffic Detector
+# ============================================================
+
+# ── C Source Code (DO NOT upload to GitHub) ──
+*.c
+*.h
+*.o
+*.obj
+
+# ── Compiled Binaries ──
+*.exe
+*.dll
+*.so
+*.dylib
+
+# ── Python Bytecode ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# ── GeoIP Data (large binary, third-party) ──
+geoip.dat
+
+# ── Generated Cache ──
+.cn_ip_cache.bin
+
+# ── Runtime State (CONTAINS SENSITIVE IPs & NETWORK DATA) ──
+.blacklist.json
+.whitelist.json
+
+# ── Runtime Output (may contain captured network data) ──
+logs/
+results/
+
+# ── PyInstaller Build Artifacts ──
+build/
+dist/
+*.spec
+
+# ── IDE / Editor ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Virtual Environments ──
+venv/
+.venv/
+env/
+.env/
+
+# ── OS Generated ──
+*.log
+*.tmp
+*.bak

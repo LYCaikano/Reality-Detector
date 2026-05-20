@@ -22,6 +22,10 @@ from collections import OrderedDict, deque
 import logging
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 from scapy.all import sniff, get_if_list, IP, IPv6, TCP
+try:
+    from scapy.arch.windows import get_windows_if_list
+except ImportError:
+    get_windows_if_list = None
 
 from geo_matcher import get_geo
 # Auto-generate geo cache on first run
@@ -717,29 +721,7 @@ def process_packet(app, pkt, exclude_lan):
                     app._pending_tasks[probe_key] = task
                     threading.Thread(target=_run_confirmation_batch, args=(app, task, probe_key), daemon=True).start()
 
-def _get_windows_adapter_map():
-    if sys.platform != "win32": return {}
-    try:
-        kwargs = dict(timeout=10, stderr=subprocess.DEVNULL)
-        # Prevent console window popup and hang in --windowed PyInstaller builds
-        kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
-        out = subprocess.check_output(
-            ["powershell", "-NoProfile", "-Command",
-             "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-NetAdapter | Select-Object Name, Status, InterfaceGuid | ConvertTo-Json"],
-            **kwargs
-        ).decode("utf-8", errors="replace")
-    except Exception: return {}
 
-    import json as _json
-    try: items = _json.loads(out)
-    except Exception: return {}
-    if isinstance(items, dict): items = [items]
-
-    result = {}
-    for ad in items:
-        guid_raw = ad.get("InterfaceGuid", "").strip("{}").lower()
-        if guid_raw: result[guid_raw] = (ad.get("Name", ""), ad.get("Status", ""))
-    return result
 
 class AppUI:
     def __init__(self, root):
@@ -834,27 +816,57 @@ class AppUI:
         self.btn_refresh.config(state="disabled")
 
         def _worker():
-            scapy_ifaces = get_if_list()
-            win_map = _get_windows_adapter_map()
             display_map = {}
             display = []
 
-            for si in scapy_ifaces:
-                guid = ""
-                if "NPF_{" in si:
-                    gs = si.index("NPF_{") + 4
-                    ge = si.index("}", gs) if "}" in si[gs:] else len(si)
-                    guid = si[gs:ge].lower()
-                win_name, status = win_map.get(guid, ("", ""))
-                if win_name:
-                    short_guid = guid[:8] + "..." if len(guid) > 8 else guid
-                    display_str = f"[{status}] {win_name}  (GUID:{short_guid})"
-                else:
-                    display_str = si
-                display.append(display_str)
-                display_map[display_str] = si
+            npf_ifaces = get_if_list()  # Npcap-capturable interfaces
 
-            # Update UI on main thread
+            if get_windows_if_list is not None:
+                try:
+                    # Build GUID → NPF name mapping from get_if_list
+                    guid_to_npf = {}
+                    for npf in npf_ifaces:
+                        # Extract GUID: \Device\NPF_{GUID}
+                        start = npf.find('{')
+                        end = npf.find('}', start) if start >= 0 else -1
+                        if start >= 0 and end >= 0:
+                            guid_to_npf[npf[start:end+1].lower()] = npf
+
+                    # Match with get_windows_if_list for friendly names
+                    for iface in get_windows_if_list():
+                        guid = iface.get('guid', '')
+                        npf_name = guid_to_npf.get(guid.lower(), '')
+                        if not npf_name:
+                            continue  # Not a Npcap-capturable interface
+
+                        description = iface.get('description', '')
+                        # Strip filter driver suffixes (e.g. "-Npcap Packet Driver (NPCAP)-0000")
+                        import re
+                        base_name = re.sub(
+                            r'-(Npcap Packet Driver|WFP .*Filter|QoS Packet Scheduler|'
+                            r'Native WiFi Filter|Virtual WiFi Filter|Huorong NDIS Filter).*$',
+                            '', description).strip() if description else ''
+                        ips = ', '.join(iface.get('ips', []))
+
+                        if base_name:
+                            label = f"{base_name}  ({ips})" if ips else f"{base_name}"
+                        else:
+                            label = npf_name
+
+                        # Avoid duplicate labels (multiple filter drivers per adapter)
+                        if label in display_map:
+                            continue
+                        display.append(label)
+                        display_map[label] = npf_name
+                except Exception:
+                    pass
+
+            # Fallback to raw NPF names
+            if not display:
+                for iface in npf_ifaces:
+                    display.append(iface)
+                    display_map[iface] = iface
+
             self.root.after(0, lambda: self._apply_interfaces(display, display_map))
 
         threading.Thread(target=_worker, daemon=True).start()

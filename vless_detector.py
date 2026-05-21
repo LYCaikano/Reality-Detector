@@ -646,7 +646,7 @@ def process_packet(app, pkt):
                 stream.server_ip = dst
 
                 
-                log_key = (dst, sni)
+                log_key = ("C", dst, sni)
                 last = app.last_hello_log.get(log_key, 0)
                 if ts - last > 10:
                     app.last_hello_log[log_key] = ts
@@ -661,7 +661,7 @@ def process_packet(app, pkt):
         sv = find_server_hello_selected_version(payload)
         if sv == 0x0304:
             stream.server_response_printed = True
-            sh_key = (dst, stream.sni)
+            sh_key = ("S", dst, stream.sni)
             last = app.last_hello_log.get(sh_key, 0)
             if ts - last > 10:
                 app.last_hello_log[sh_key] = ts
@@ -1030,28 +1030,49 @@ class AppUI:
             self.app.running = True
             self.btn_start.config(text="Stop Capture")
             self.iface_cb.config(state="disabled")
+            self.btn_refresh.config(state="disabled")
             # Bind probe sockets to this interface to bypass TUN/VPN routing
             try:
                 from scapy.all import get_if_addr
                 self.app.bind_addr = (get_if_addr(iface), 0)
             except Exception:
                 self.app.bind_addr = None
-            self.sniffer_thread = threading.Thread(
-                target=lambda: sniff(
-                    iface=iface,
-                    prn=lambda p: process_packet(self.app, p),
-                    store=0,
-                    stop_filter=lambda _: not self.app.running,
-                ), daemon=True)
+
+            def _sniff_worker():
+                try:
+                    sniff(
+                        iface=iface,
+                        prn=lambda p: process_packet(self.app, p),
+                        store=0,
+                        stop_filter=lambda _: not self.app.running,
+                    )
+                except OSError as e:
+                    # Adapter removed / Npcap error during capture
+                    self.app.running = False
+                    self.ui_queue.put({"type": "log", "level": "INFO",
+                                       "msg": f"[ERR] Capture stopped: adapter error ({e})"})
+                    self.root.after(0, self._on_capture_stopped)
+                except Exception as e:
+                    self.app.running = False
+                    self.ui_queue.put({"type": "log", "level": "INFO",
+                                       "msg": f"[ERR] Capture stopped unexpectedly: {e}"})
+                    self.root.after(0, self._on_capture_stopped)
+
+            self.sniffer_thread = threading.Thread(target=_sniff_worker, daemon=True)
             self.sniffer_thread.start()
             self.log("[SYS] Capture started.")
             self.app._push_status()
         else:
             self.app.running = False
-            self.btn_start.config(text="Start Capture")
-            self.iface_cb.config(state="normal")
+            self._on_capture_stopped()
             self.log("[SYS] Capture stopped.")
             self.app._push_status()
+
+    def _on_capture_stopped(self):
+        """Reset UI state when capture stops (normal or error)."""
+        self.btn_start.config(text="Start Capture")
+        self.iface_cb.config(state="normal")
+        self.btn_refresh.config(state="normal")
 
     def log(self, msg, level="INFO"):
         self.ui_queue.put({"type": "log", "level": level, "msg": msg})

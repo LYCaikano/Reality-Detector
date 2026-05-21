@@ -671,7 +671,7 @@ def process_packet(app, pkt):
             if not stream.replay_done:
                 stream.replay_done = True
                 c_stream = _get_stream(app, _reverse_key(key), ts)
-                c_stream.server_ip = dst  # correct server IP for the c→s reverse stream
+                c_stream.server_ip = src  # src = server IP in s→c direction
                 c_hello = find_tls_handshake_record(c_stream.data, 0x01)
                 if c_hello and c_stream.sni and not _is_sni_excluded(c_stream.sni):
                     # Skip Chinese IPs/domains via geo match

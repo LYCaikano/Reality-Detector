@@ -655,13 +655,14 @@ def process_packet(app, pkt):
                 s_key = _reverse_key(key)
                 s_stream = _get_stream(app, s_key, ts)
                 s_stream.expect_server_response = True
-                s_stream.server_ip = dst  # s→c stream: correct server IP (dst of c→s)
+                s_stream.sni = sni  # propagate SNI for ServerHello logging
+                s_stream.server_ip = dst
 
     if stream.expect_server_response and not stream.server_response_printed:
         sv = find_server_hello_selected_version(payload)
         if sv == 0x0304:
             stream.server_response_printed = True
-            sh_key = ("S", dst, stream.sni)
+            sh_key = ("S", src, stream.sni)  # src = server IP in s→c direction
             last = app.last_hello_log.get(sh_key, 0)
             if ts - last > 10:
                 app.last_hello_log[sh_key] = ts

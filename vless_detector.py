@@ -371,8 +371,8 @@ class CoreApp:
                     pending.append((pk[0], pk[1], pk[2], bn))
             wc = len(self._white)
             bc = len(self._black)
-            wl = [(k[0], k[1], k[2]) for k in list(self._white.keys())[:6]]
-            bl = [(k[1], k[2], k[3]) for k in list(self._black.keys())[:6]]
+            wl = [(k[0], k[1], k[2]) for k in self._white.keys()]
+            bl = [(k[0], k[1], k[2], k[3]) for k in self._black.keys()]
         self.ui_queue.put({"type": "STATUS", "active": active, "waiting": waiting,
                            "pending": pending, "white": wc, "black": bc,
                            "white_list": wl, "black_list": bl})
@@ -752,11 +752,11 @@ class AppUI:
         self.btn_start.pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_frame, text="Clear Log", command=self._clear_log).pack(side=tk.LEFT, padx=2)
 
-        # Bottom area: log (left) + status (right)
-        bottom = ttk.Frame(root)
-        bottom.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # Middle area: log (left) + status (right)
+        middle = ttk.Frame(root)
+        middle.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 5))
 
-        self.log_area = scrolledtext.ScrolledText(bottom, bg="black", fg="lightgray", font=("Consolas", 10))
+        self.log_area = scrolledtext.ScrolledText(middle, bg="black", fg="lightgray", font=("Consolas", 10))
         self.log_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.log_area.tag_config("alert", foreground="red")
         self.log_area.tag_config("server", foreground="cyan")
@@ -765,7 +765,7 @@ class AppUI:
         self.log_area.tag_config("skip", foreground="dim gray")
 
         # Status panel (right side)
-        status_frame = ttk.LabelFrame(bottom, text="Probe Status", padding=5)
+        status_frame = ttk.LabelFrame(middle, text="Probe Status", padding=5)
         status_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(5, 0))
         self.status_area = tk.Text(status_frame, width=36, height=20, bg="#1a1a2e", fg="#e0e0e0",
                                     font=("Consolas", 9), state=tk.DISABLED, wrap=tk.WORD)
@@ -774,6 +774,42 @@ class AppUI:
         self.status_area.tag_config("waiting", foreground="#ffb74d")
         self.status_area.tag_config("header", foreground="#81c784")
         self.status_area.tag_config("count", foreground="#e0e0e0")
+
+        # Bottom area: blacklist + whitelist tables
+        lists_frame = ttk.Frame(root)
+        lists_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        # Blacklist table
+        bl_frame = ttk.LabelFrame(lists_frame, text="Blacklist (0)", padding=3)
+        bl_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        self._bl_label = bl_frame
+        cols_bl = ("client_ip", "server", "sni")
+        self.bl_tree = ttk.Treeview(bl_frame, columns=cols_bl, show="headings", height=5)
+        self.bl_tree.heading("client_ip", text="内网IP")
+        self.bl_tree.heading("server", text="外网IP:端口")
+        self.bl_tree.heading("sni", text="SNI")
+        self.bl_tree.column("client_ip", width=120, minwidth=80)
+        self.bl_tree.column("server", width=150, minwidth=100)
+        self.bl_tree.column("sni", width=200, minwidth=100)
+        bl_vsb = ttk.Scrollbar(bl_frame, orient=tk.VERTICAL, command=self.bl_tree.yview)
+        self.bl_tree.config(yscrollcommand=bl_vsb.set)
+        self.bl_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        bl_vsb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Whitelist table
+        wl_frame = ttk.LabelFrame(lists_frame, text="Whitelist (0)", padding=3)
+        wl_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
+        self._wl_label = wl_frame
+        cols_wl = ("server", "sni")
+        self.wl_tree = ttk.Treeview(wl_frame, columns=cols_wl, show="headings", height=5)
+        self.wl_tree.heading("server", text="外网IP:端口")
+        self.wl_tree.heading("sni", text="SNI")
+        self.wl_tree.column("server", width=150, minwidth=100)
+        self.wl_tree.column("sni", width=250, minwidth=100)
+        wl_vsb = ttk.Scrollbar(wl_frame, orient=tk.VERTICAL, command=self.wl_tree.yview)
+        self.wl_tree.config(yscrollcommand=wl_vsb.set)
+        self.wl_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        wl_vsb.pack(side=tk.RIGHT, fill=tk.Y)
 
         self._last_status_data = None
         self.root.after(100, self.process_queue)
@@ -892,18 +928,10 @@ class AppUI:
         white_list = data.get("white_list", [])
         black_list = data.get("black_list", [])
 
-        if black_list:
-            self.status_area.insert(tk.END, f"Blacklist ({black})\n", "header")
-            for ip, port, sni in black_list[:6]:
-                self.status_area.insert(tk.END, f"  {ip}:{port}\n  {sni}\n", "active")
+        self.status_area.insert(tk.END, f"Lists  B:{black} W:{white}\n\n", "count")
 
-        if white_list:
-            self.status_area.insert(tk.END, f"Whitelist ({white})\n", "header")
-            for ip, port, sni in white_list[:6]:
-                self.status_area.insert(tk.END, f"  {ip}:{port}\n  {sni}\n", "waiting")
-
-        if not black_list and not white_list:
-            self.status_area.insert(tk.END, f"Lists  B:{black} W:{white}\n\n", "count")
+        # Update bottom tables
+        self._render_lists(black_list, white_list)
 
         self.status_area.insert(tk.END, f"Active ({len(active)})\n", "header")
         for ip, port, sni, rd, rt, st, bn in active:
@@ -933,6 +961,33 @@ class AppUI:
         # Restore scroll position
         if scroll_pos and scroll_pos[0] > 0:
             self.status_area.yview_moveto(scroll_pos[0])
+    def _render_lists(self, black_list, white_list):
+        """Update bottom blacklist/whitelist Treeview tables."""
+        # Update blacklist table
+        existing_bl = set(self.bl_tree.get_children())
+        new_bl_ids = set()
+        for client_ip, server_ip, server_port, sni in black_list:
+            iid = f"{client_ip}|{server_ip}|{server_port}|{sni}"
+            new_bl_ids.add(iid)
+            if iid not in existing_bl:
+                self.bl_tree.insert("", tk.END, iid=iid,
+                                    values=(client_ip, f"{server_ip}:{server_port}", sni))
+        for old_id in existing_bl - new_bl_ids:
+            self.bl_tree.delete(old_id)
+        self._bl_label.config(text=f"Blacklist ({len(black_list)})")
+
+        # Update whitelist table
+        existing_wl = set(self.wl_tree.get_children())
+        new_wl_ids = set()
+        for server_ip, server_port, sni in white_list:
+            iid = f"{server_ip}|{server_port}|{sni}"
+            new_wl_ids.add(iid)
+            if iid not in existing_wl:
+                self.wl_tree.insert("", tk.END, iid=iid,
+                                    values=(f"{server_ip}:{server_port}", sni))
+        for old_id in existing_wl - new_wl_ids:
+            self.wl_tree.delete(old_id)
+        self._wl_label.config(text=f"Whitelist ({len(white_list)})")
 
     def _status_auto_refresh(self):
         """Refresh status panel every second for real-time elapsed/remaining times."""

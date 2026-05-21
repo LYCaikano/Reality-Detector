@@ -633,10 +633,6 @@ def process_packet(app, pkt):
         if stream.server_ip != src:
             stream.server_ip = src
 
-    # ── Skip CN/Private IPs via geo match ──
-    geo = get_geo()
-    if geo.is_skip_ip(stream.server_ip):
-        return
 
     stream.append(pkt[TCP].seq, payload)
 

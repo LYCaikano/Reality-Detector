@@ -45,7 +45,7 @@ if not os.path.exists(_cache_ip) and os.path.exists(_geoip_dat):
     print("[geo] Done.", flush=True)
 _geo = get_geo()
 if len(_geo._v4) == 0 and len(_geo._v6) == 0:
-    print("[geo] WARNING: No CN CIDRs loaded — check geoip.dat in same folder")
+    print("[geo] WARNING: No CN/Private CIDRs loaded — check geoip.dat in same folder")
 
 MAX_STREAMS = 1024
 MAX_STREAM_BYTES = 32768
@@ -182,28 +182,7 @@ def buffer_contains_record_from_tail(data, record_type, record_len):
 def _reverse_key(key):
     return (key[0], key[3], key[4], key[1], key[2])
 
-_LAN_V4 = [
-    ipaddress.IPv4Network("10.0.0.0/8"),
-    ipaddress.IPv4Network("172.16.0.0/12"),
-    ipaddress.IPv4Network("192.168.0.0/16"),
-    ipaddress.IPv4Network("127.0.0.0/8"),
-    ipaddress.IPv4Network("100.64.0.0/10"),
-    ipaddress.IPv4Network("169.254.0.0/16"),
-]
-_LAN_V6 = [
-    ipaddress.IPv6Network("fc00::/7"),
-    ipaddress.IPv6Network("fe80::/10"),
-    ipaddress.IPv6Network("::1/128"),
-]
 
-def _is_lan_ip(ip_str):
-    try:
-        addr = ipaddress.ip_address(ip_str)
-    except ValueError:
-        return False
-    if isinstance(addr, ipaddress.IPv4Address):
-        return any(addr in net for net in _LAN_V4)
-    return any(addr in net for net in _LAN_V6)
 
 class TcpStream:
     def __init__(self, key, now):
@@ -216,13 +195,7 @@ class TcpStream:
         self.sni = ""
         self.last_seen = now
         self.server_ip = key[3]
-        self._is_lan_cached = None
 
-    @property
-    def is_lan(self):
-        if self._is_lan_cached is None:
-            self._is_lan_cached = _is_lan_ip(self.server_ip)
-        return self._is_lan_cached
 
     def append(self, seq, payload):
         if len(self.data) < MAX_STREAM_BYTES:
@@ -640,7 +613,7 @@ def _run_confirmation_batch(app, task, probe_key):
     app._finish_probe_batch(probe_key, per_set, total_matched_rounds, server_ip, server_port, sni, task['client_key'][1])
 
 
-def process_packet(app, pkt, exclude_lan):
+def process_packet(app, pkt):
     if not app.running or TCP not in pkt: return
 
     if IP in pkt: ip_ver, src, dst = 4, pkt[IP].src, pkt[IP].dst
@@ -659,10 +632,10 @@ def process_packet(app, pkt, exclude_lan):
     if payload and len(payload) >= 9 and payload[0:3] == b'\x16\x03' and payload[5] == 0x02:
         if stream.server_ip != src:
             stream.server_ip = src
-            stream._is_lan_cached = None  # invalidate cache
 
-    # ── LAN exclusion: check the server IP (dst of initial c→s connection) ──
-    if exclude_lan and _is_lan_ip(stream.server_ip):
+    # ── Skip CN/Private IPs via geo match ──
+    geo = get_geo()
+    if geo.is_skip_ip(stream.server_ip):
         return
 
     stream.append(pkt[TCP].seq, payload)
@@ -675,7 +648,7 @@ def process_packet(app, pkt, exclude_lan):
                 stream.sni = sni
                 stream.client_hello_printed = True
                 stream.server_ip = dst
-                stream._is_lan_cached = _is_lan_ip(dst)
+
                 
                 log_key = (dst, sni)
                 last = app.last_hello_log.get(log_key, 0)
@@ -706,8 +679,8 @@ def process_packet(app, pkt, exclude_lan):
                 if c_hello and c_stream.sni and not _is_sni_excluded(c_stream.sni):
                     # Skip Chinese IPs/domains via geo match
                     geo = get_geo()
-                    if geo.is_cn_ip(src):
-                        app.log("IP_SKIP", f"TLS skip: CN IP {src} ({c_stream.sni})")
+                    if geo.is_skip_ip(src):
+                        app.log("IP_SKIP", f"TLS skip: CN/Private IP {src} ({c_stream.sni})")
                         return
                     probe_key = (src, sport, c_stream.sni)
                     task = {
@@ -734,7 +707,7 @@ class AppUI:
         self.show_detect  = tk.BooleanVar(value=True)
         self.show_skip    = tk.BooleanVar(value=False)
         self.auto_scroll  = tk.BooleanVar(value=True)
-        self.exclude_lan  = tk.BooleanVar(value=True)
+
         self.sniffer_thread = None
         self._all_logs = []  # list of (level, msg, tag) for post-hoc filtering
 
@@ -772,10 +745,10 @@ class AppUI:
         self.cb_detect.grid(row=3, column=1, padx=(210,0), sticky=tk.W)
         self.cb_scroll = ttk.Checkbutton(ctrl, text="Auto-scroll", variable=self.auto_scroll)
         self.cb_scroll.grid(row=3, column=1, padx=(300,0), sticky=tk.W)
-        self.cb_skip = ttk.Checkbutton(ctrl, text="Skip", variable=self.show_skip)
+        self.cb_skip = ttk.Checkbutton(ctrl, text="Skip CN/Private", variable=self.show_skip)
         self.cb_skip.grid(row=3, column=1, padx=(390,0), sticky=tk.W)
 
-        ttk.Checkbutton(ctrl, text="Exclude LAN IPs (10/172/192/100.64.x)", variable=self.exclude_lan).grid(row=4, column=0, columnspan=2, sticky=tk.W)
+
         
         btn_frame = ttk.Frame(ctrl)
         btn_frame.grid(row=3, column=2, sticky=tk.E, padx=5)
@@ -1015,8 +988,7 @@ class AppUI:
             self.sniffer_thread = threading.Thread(
                 target=lambda: sniff(
                     iface=iface,
-                    prn=lambda p: process_packet(self.app, p,
-                        self.exclude_lan.get()),
+                    prn=lambda p: process_packet(self.app, p),
                     store=0,
                     stop_filter=lambda _: not self.app.running,
                 ), daemon=True)

@@ -1,4 +1,4 @@
-"""Fast CN IP matcher using pre-built binary cache from gen_geo_cache.py.
+"""Fast CN/Private IP matcher using pre-built binary cache from gen_geo_cache.py.
 
 Run gen_geo_cache.py once to build .cn_ip_cache.bin from geoip.dat.
 After that, this module loads it instantly.
@@ -42,7 +42,8 @@ class GeoMatcher:
         self._v4, self._v6 = _load_ip_cache()
         self._cache = {}
 
-    def is_cn_ip(self, ip_str):
+    def is_skip_ip(self, ip_str):
+        """Return True if ip_str is a CN or private/LAN IP."""
         if ip_str in self._cache:
             return self._cache[ip_str]
         try:

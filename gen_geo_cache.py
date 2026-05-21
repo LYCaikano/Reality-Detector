@@ -38,12 +38,15 @@ class _FR:
         elif w == 5: self.p += 4
 
 
-def parse_cn_cidrs(path):
+def parse_skip_cidrs(path, codes=('CN', 'PRIVATE')):
+    """Parse CIDRs for given country codes from geoip.dat."""
     t0 = time.time()
     with open(path, "rb") as f:
         data = memoryview(f.read())
     r = _FR(data)
     found = []
+    target_codes = set(codes)
+    matched_codes = set()
     while r.p < r.e:
         t = r.vu()
         if t == 0: break
@@ -55,7 +58,8 @@ def parse_cn_cidrs(path):
             if (t2 >> 3) == 1 and (t2 & 7) == 2:
                 sl = r.vu()
                 cc = r.raw(sl).decode()
-                if cc == 'CN':
+                if cc in target_codes:
+                    matched_codes.add(cc)
                     while r.p < ep + elen:
                         t3 = r.vu()
                         if t3 == 0: break
@@ -74,14 +78,16 @@ def parse_cn_cidrs(path):
                             if ipb and prefix:
                                 found.append((ipaddress.ip_address(ipb), prefix))
                         else: r.sk(wt3)
-                    break
+                    if matched_codes == target_codes:
+                        break  # Found all target codes, stop early
+                    r.p = ep + elen
                 else:
                     r.p = ep + elen
             else:
                 r.p = ep + elen
         else:
             r.sk(wt)
-    print(f"       {len(found)} CN CIDRs in {time.time()-t0:.1f}s")
+    print(f"       {len(found)} CIDRs ({', '.join(sorted(matched_codes))}) in {time.time()-t0:.1f}s")
     return found
 
 
@@ -97,7 +103,7 @@ def main():
         return
 
     print(f"[RUN]  Parsing geoip.dat ({os.path.getsize(geoip)/1024/1024:.1f} MB)...")
-    cidrs = parse_cn_cidrs(geoip)
+    cidrs = parse_skip_cidrs(geoip)
     with open(cache, "wb") as f:
         for a, prefix in cidrs:
             if isinstance(a, ipaddress.IPv4Address):
